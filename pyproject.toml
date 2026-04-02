@@ -1,0 +1,11 @@
+[project]
+name = "codereview-env"
+version = "1.0.0"
+dependencies = [
+    "openenv-core>=0.2.0",
+    "fastapi",
+    "uvicorn"
+]
+
+[project.scripts]
+server = "server.app:main"

@@ -8,9 +8,9 @@ import pytest
 # Ensure the parent directory is on the path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from codereview_env.env import CodeReviewEnv
-from codereview_env.models import CodeReviewAction, ReviewComment
-from codereview_env.tasks import grade_task, load_task, list_tasks
+from server.env import CodeReviewEnv
+from server.models import CodeReviewAction, ReviewComment
+from server.tasks import grade_task, load_task, list_tasks
 
 
 # ── Fixtures ────────────────────────────────────────────────────────
