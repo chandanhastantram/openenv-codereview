@@ -1,3 +1,12 @@
+---
+title: OpenEnv CodeReview
+emoji: 🔍
+colorFrom: blue
+colorTo: indigo
+sdk: docker
+pinned: false
+---
+
 # CodeReview OpenEnv 🔍
 
 **An OpenEnv environment for AI-assisted code review evaluation.**
