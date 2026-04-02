@@ -37,7 +37,8 @@ import json
 import os
 import re
 import textwrap
-from typing import Any, Dict, List, Optional
+import uuid
+from typing import List, Optional
 
 import httpx
 from openai import OpenAI
@@ -53,6 +54,9 @@ BENCHMARK = "codereview-env"
 MAX_STEPS = 8
 TEMPERATURE = 0.2
 MAX_TOKENS = 800
+
+# Score threshold to consider an episode "successful"
+SUCCESS_THRESHOLD = 0.5
 
 
 # ── Logging (mandatory format) ─────────────────────────────────────
@@ -83,14 +87,24 @@ class EnvClient:
     def __init__(self, base_url: str):
         self.base_url = base_url.rstrip("/")
         self.client = httpx.Client(timeout=30.0)
+        self.session_id: Optional[str] = None
 
     def reset(self, task_id: str) -> dict:
-        resp = self.client.post(f"{self.base_url}/reset", json={"task_id": task_id})
+        resp = self.client.post(
+            f"{self.base_url}/reset",
+            json={"task_id": task_id},
+        )
         resp.raise_for_status()
-        return resp.json()
+        data = resp.json()
+        # Store session_id from server (session-isolated env)
+        self.session_id = data.get("session_id") or str(uuid.uuid4())
+        # Return just the observation (backwards compat)
+        return data.get("observation", data)
 
     def step(self, action: dict) -> dict:
-        resp = self.client.post(f"{self.base_url}/step", json=action)
+        payload = dict(action)
+        payload["session_id"] = self.session_id or ""
+        resp = self.client.post(f"{self.base_url}/step", json=payload)
         resp.raise_for_status()
         return resp.json()
 
@@ -127,14 +141,12 @@ SYSTEM_PROMPT = textwrap.dedent("""\
 """)
 
 
-def build_user_prompt(observation: dict, history: list[str]) -> str:
-    """Build the user prompt from the current observation."""
+def build_initial_prompt(observation: dict) -> str:
+    """Build the first user message from the initial observation."""
     task_id = observation.get("task_id", "?")
     title = observation.get("pr_title", "?")
     desc = observation.get("pr_description", "")
-    step = observation.get("step", 0)
     max_steps = observation.get("max_steps", 10)
-    error = observation.get("last_action_error")
 
     # Format files/diffs
     files_text = ""
@@ -143,34 +155,54 @@ def build_user_prompt(observation: dict, history: list[str]) -> str:
         files_text += f["full_new_content"]
         files_text += "\n"
 
-    # Format existing comments
-    comments_text = ""
-    existing = observation.get("existing_comments", [])
-    if existing:
-        comments_text = "\n\nYour previous comments:\n"
-        for c in existing:
-            comments_text += f"  - {c['file_path']}:{c['line_number']} [{c['severity']}] {c['message']}\n"
-
     prompt = textwrap.dedent(f"""\
         Task: {task_id}
-        Step: {step}/{max_steps}
+        Max steps allowed: {max_steps}
         PR Title: {title}
         PR Description: {desc}
         
         Files changed:
         {files_text}
-        {comments_text}
-        {"Last action error: " + error if error else ""}
         
-        Find the next issue or submit your review. Respond with a single JSON object.
+        Review this PR carefully. Find issues one at a time. Respond with a single JSON object.
     """)
-
     return prompt.strip()
+
+
+def build_followup_prompt(observation: dict, last_reward: float) -> str:
+    """Build a follow-up message after each step, updating the agent on progress."""
+    step = observation.get("step", 0)
+    max_steps = observation.get("max_steps", 10)
+    error = observation.get("last_action_error")
+    existing = observation.get("existing_comments", [])
+
+    parts = [f"Step {step}/{max_steps} — your last action earned reward {last_reward:+.3f}."]
+
+    if error:
+        parts.append(f"⚠️ Error from last action: {error}")
+
+    if existing:
+        parts.append(f"\nComments placed so far ({len(existing)}):")
+        for c in existing:
+            parts.append(
+                f"  [{c.get('severity','?')}] {c.get('file_path','?')}:"
+                f"{c.get('line_number','?')} — {c.get('message','')[:80]}"
+            )
+
+    remaining = max_steps - step
+    if remaining <= 2:
+        parts.append(
+            f"\n⏳ Only {remaining} step(s) left — finish reviewing "
+            "or submit with request_changes/approve."
+        )
+    else:
+        parts.append("\nFind the next issue or submit your review. Respond with a single JSON object.")
+
+    return "\n".join(parts)
 
 
 def parse_action(response_text: str) -> dict:
     """Extract a JSON action from the model response."""
-    # Try to find JSON in the response
     text = response_text.strip()
 
     # Try direct JSON parse
@@ -181,7 +213,7 @@ def parse_action(response_text: str) -> dict:
     except json.JSONDecodeError:
         pass
 
-    # Try to find JSON in code blocks or braces
+    # Try to find JSON within code blocks or raw braces
     json_pattern = re.compile(r"\{[^{}]*\"action_type\"[^{}]*\}", re.DOTALL)
     match = json_pattern.search(text)
     if match:
@@ -191,7 +223,7 @@ def parse_action(response_text: str) -> dict:
         except json.JSONDecodeError:
             pass
 
-    # Fallback: request_changes with the raw text
+    # Fallback: submit review with the raw text
     return {
         "action_type": "request_changes",
         "message": text[:500] if text else "Unable to parse response",
@@ -201,33 +233,39 @@ def parse_action(response_text: str) -> dict:
 # ── Main inference loop ─────────────────────────────────────────────
 
 def run_task(client: OpenAI, env: EnvClient, task_id: str) -> None:
-    """Run a single task episode."""
+    """
+    Run a single task episode with a proper multi-turn conversation.
+
+    The LLM receives the full conversation history on every call, enabling
+    genuine iterative reasoning rather than single-shot prompting.
+    """
     log_start(task=task_id, env=BENCHMARK, model=MODEL_NAME)
 
     rewards: List[float] = []
     steps_taken = 0
     success = False
+    # Full conversation history passed to LLM every step
+    messages: List[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
 
     try:
-        # Reset environment
+        # Reset environment — get initial observation
         observation = env.reset(task_id)
-        history: List[str] = []
+
+        # First user message: the full PR context
+        initial_prompt = build_initial_prompt(observation)
+        messages.append({"role": "user", "content": initial_prompt})
+
+        last_reward = 0.0
 
         for step_num in range(1, MAX_STEPS + 1):
             if observation.get("done", False):
                 break
 
-            # Build prompt
-            user_prompt = build_user_prompt(observation, history)
-
-            # Call the model
+            # Call the model with full conversation history
             try:
                 completion = client.chat.completions.create(
                     model=MODEL_NAME,
-                    messages=[
-                        {"role": "system", "content": SYSTEM_PROMPT},
-                        {"role": "user", "content": user_prompt},
-                    ],
+                    messages=messages,
                     temperature=TEMPERATURE,
                     max_tokens=MAX_TOKENS,
                     stream=False,
@@ -237,10 +275,11 @@ def run_task(client: OpenAI, env: EnvClient, task_id: str) -> None:
                 print(f"[DEBUG] Model request failed: {exc}", flush=True)
                 response_text = '{"action_type": "request_changes", "message": "Model error, submitting review"}'
 
-            # Parse action
-            action = parse_action(response_text)
+            # Add assistant turn to conversation history
+            messages.append({"role": "assistant", "content": response_text})
 
-            # Send to environment
+            # Parse action and send to environment
+            action = parse_action(response_text)
             result = env.step(action)
 
             reward = result.get("reward", 0.0)
@@ -250,18 +289,29 @@ def run_task(client: OpenAI, env: EnvClient, task_id: str) -> None:
 
             rewards.append(reward)
             steps_taken = step_num
+            last_reward = reward
 
-            # Format action string for logging
-            action_str = f"{action.get('action_type', '?')}({action.get('file_path', '')}:{action.get('line_number', '')})"
+            # Format action string for mandatory logging
+            action_str = (
+                f"{action.get('action_type', '?')}"
+                f"({action.get('file_path', '')}:{action.get('line_number', '')})"
+            )
             log_step(step=step_num, action=action_str, reward=reward, done=done, error=error)
 
-            history.append(f"Step {step_num}: {action_str} -> {reward:+.2f}")
             observation = obs
 
             if done:
-                success = reward > 0.0
+                # Priority 4 FIX: success is based on the FINAL grader score
+                # (the last reward when done=True is the full episode score 0.0–1.0)
+                final_score = reward
+                success = final_score >= SUCCESS_THRESHOLD
                 break
+            else:
+                # Add follow-up user message with progress context
+                followup = build_followup_prompt(obs, last_reward)
+                messages.append({"role": "user", "content": followup})
         else:
+            # Ran out of steps without done=True
             success = False
 
     except Exception as exc:

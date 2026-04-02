@@ -83,7 +83,7 @@ cd openenv-codereview
 pip install -r requirements.txt
 
 # Run the server
-uvicorn codereview_env.server:app --host 0.0.0.0 --port 7860
+uvicorn server.app:app --host 0.0.0.0 --port 7860
 
 # Test it
 curl -X POST http://localhost:7860/reset -H "Content-Type: application/json" -d '{"task_id": "find-obvious-bug"}'
@@ -131,17 +131,21 @@ _Actual scores may vary based on model temperature and API availability._
 
 ```
 openenv-codereview/
-├── codereview_env/
+├── server/
 │   ├── models.py    # Pydantic: Observation, Action, Reward
 │   ├── env.py       # Core: reset(), step(), state()
 │   ├── tasks.py     # 3 tasks + deterministic graders
-│   ├── server.py    # FastAPI REST server
+│   ├── app.py       # FastAPI REST server (session-isolated)
 │   └── data/        # PR diff JSON files
-├── inference.py     # Baseline agent script
+├── inference.py     # Baseline agent (multi-turn conversation)
 ├── openenv.yaml     # OpenEnv metadata
+├── pyproject.toml   # Package config & uv entry point
+├── uv.lock          # Locked dependency manifest
 ├── Dockerfile       # Docker containerization
 └── tests/           # Unit tests
 ```
+
+> **Session isolation**: Each `/reset` call returns a `session_id`. Pass it in every subsequent `/step` and `/state` request. This allows multiple agents to run concurrently without state corruption.
 
 ## Grading
 
