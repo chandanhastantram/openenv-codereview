@@ -1,0 +1,84 @@
+name: codereview-env
+version: 1.0.0
+api_version: 1
+description: >
+  An OpenEnv environment for AI-assisted code review. Agents review pull request
+  diffs, identify bugs and security issues, and submit structured reviews.
+  Features 3 difficulty-graded tasks with deterministic graders.
+
+author: chandan123467896uyjh
+license: MIT
+tags:
+  - openenv
+  - code-review
+  - security
+  - software-engineering
+
+tasks:
+  - id: find-obvious-bug
+    difficulty: easy
+    description: >
+      Find an obvious null-dereference bug in a user profile utility
+      function. The bug is on a single line where .strip() is called
+      on a potentially None value.
+
+  - id: triage-mixed-pr
+    difficulty: medium
+    description: >
+      Triage a multi-file PR with 3 issues of varying severity:
+      a thread-safety race condition (critical), a boundary validation
+      error (major), and an unused import (minor).
+
+  - id: security-audit
+    difficulty: hard
+    description: >
+      Audit an admin API endpoint for security vulnerabilities including
+      SQL injection via string interpolation, hardcoded credentials,
+      and missing authentication/authorization checks.
+
+observation_space:
+  type: object
+  fields:
+    - name: task_id
+      type: string
+    - name: pr_title
+      type: string
+    - name: pr_description
+      type: string
+    - name: files
+      type: array
+      description: "List of FileChange objects with diffs"
+    - name: existing_comments
+      type: array
+      description: "Review comments placed so far"
+    - name: step
+      type: integer
+    - name: max_steps
+      type: integer
+    - name: last_action_error
+      type: string
+      nullable: true
+    - name: done
+      type: boolean
+
+action_space:
+  type: object
+  fields:
+    - name: action_type
+      type: string
+      enum: [comment, approve, request_changes]
+    - name: file_path
+      type: string
+      nullable: true
+    - name: line_number
+      type: integer
+      nullable: true
+    - name: message
+      type: string
+    - name: severity
+      type: string
+      enum: [critical, major, minor, suggestion]
+      nullable: true
+
+reward_range: [0.0, 1.0]
+max_steps: 10

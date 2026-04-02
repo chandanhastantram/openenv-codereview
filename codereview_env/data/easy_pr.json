@@ -1,0 +1,31 @@
+{
+  "task_id": "find-obvious-bug",
+  "difficulty": "easy",
+  "pr_title": "Add user profile fetching utility",
+  "pr_description": "Adds a helper function to fetch user profiles from the database and format them for the API response.",
+  "files": [
+    {
+      "path": "src/users/profile.py",
+      "language": "python",
+      "change_type": "added",
+      "full_new_content": "\"\"\"User profile utilities.\"\"\"\nfrom typing import Optional\n\n\ndef get_user_profile(db, user_id: int) -> dict:\n    \"\"\"Fetch a user profile from the database and return formatted data.\"\"\"\n    user = db.query(\"SELECT * FROM users WHERE id = %s\", user_id)\n    \n    # Build the response dict\n    profile = {\n        \"id\": user[\"id\"],\n        \"name\": user[\"first_name\"] + \" \" + user[\"last_name\"],\n        \"email\": user[\"email\"],\n        \"avatar_url\": user[\"avatar_url\"],\n    }\n    \n    # Add optional fields\n    profile[\"bio\"] = user[\"bio\"].strip()\n    profile[\"location\"] = user.get(\"location\", \"Unknown\")\n    profile[\"joined\"] = user[\"created_at\"].isoformat()\n    \n    return profile\n\n\ndef format_profile_list(db, user_ids: list[int]) -> list[dict]:\n    \"\"\"Format multiple user profiles.\"\"\"\n    results = []\n    for uid in user_ids:\n        try:\n            p = get_user_profile(db, uid)\n            results.append(p)\n        except Exception:\n            results.append({\"id\": uid, \"error\": \"not found\"})\n    return results\n",
+      "hunks": [
+        {
+          "start_line": 1,
+          "end_line": 34,
+          "content": "@@ -0,0 +1,34 @@\n+\"\"\"User profile utilities.\"\"\"\n+from typing import Optional\n+\n+\n+def get_user_profile(db, user_id: int) -> dict:\n+    \"\"\"Fetch a user profile from the database and return formatted data.\"\"\"\n+    user = db.query(\"SELECT * FROM users WHERE id = %s\", user_id)\n+    \n+    # Build the response dict\n+    profile = {\n+        \"id\": user[\"id\"],\n+        \"name\": user[\"first_name\"] + \" \" + user[\"last_name\"],\n+        \"email\": user[\"email\"],\n+        \"avatar_url\": user[\"avatar_url\"],\n+    }\n+    \n+    # Add optional fields\n+    profile[\"bio\"] = user[\"bio\"].strip()\n+    profile[\"location\"] = user.get(\"location\", \"Unknown\")\n+    profile[\"joined\"] = user[\"created_at\"].isoformat()\n+    \n+    return profile\n+\n+\n+def format_profile_list(db, user_ids: list[int]) -> list[dict]:\n+    \"\"\"Format multiple user profiles.\"\"\"\n+    results = []\n+    for uid in user_ids:\n+        try:\n+            p = get_user_profile(db, uid)\n+            results.append(p)\n+        except Exception:\n+            results.append({\"id\": uid, \"error\": \"not found\"})\n+    return results"
+        }
+      ]
+    }
+  ],
+  "ground_truth": [
+    {
+      "id": "null-deref-bio",
+      "file_path": "src/users/profile.py",
+      "line_number": 18,
+      "severity": "critical",
+      "keywords": ["None", "null", "NoneType", "AttributeError", "bio", ".strip", "optional", "None check", "might be None", "could be None", "is None"],
+      "description": "user['bio'] can be None — calling .strip() on None raises AttributeError"
+    }
+  ]
+}

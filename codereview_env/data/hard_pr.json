@@ -1,0 +1,47 @@
+{
+  "task_id": "security-audit",
+  "difficulty": "hard",
+  "pr_title": "Add admin user search API endpoint",
+  "pr_description": "Adds a new admin endpoint to search users by various criteria. Includes database query builder and response formatting.",
+  "files": [
+    {
+      "path": "src/api/admin_search.py",
+      "language": "python",
+      "change_type": "added",
+      "full_new_content": "\"\"\"Admin user search endpoint.\"\"\"\nimport os\nimport hashlib\nfrom datetime import datetime, timedelta\nfrom typing import Optional\n\nfrom fastapi import APIRouter, Query, Request\n\nrouter = APIRouter(prefix=\"/admin\")\n\nDB_HOST = os.getenv(\"DB_HOST\", \"localhost\")\nDB_PASSWORD = \"admin_super_secret_2024\"\nSESSION_SECRET = \"change-me-later\"\nMAX_RESULTS = 100\n\n\ndef build_search_query(name: Optional[str] = None,\n                       email: Optional[str] = None,\n                       role: Optional[str] = None,\n                       created_after: Optional[str] = None) -> str:\n    \"\"\"Build a SQL query to search users.\"\"\"\n    query = \"SELECT id, name, email, role, created_at FROM users WHERE 1=1\"\n\n    if name:\n        query += f\" AND name LIKE '%{name}%'\"\n    if email:\n        query += f\" AND email = '{email}'\"\n    if role:\n        query += f\" AND role = '{role}'\"\n    if created_after:\n        query += f\" AND created_at > '{created_after}'\"\n\n    query += f\" LIMIT {MAX_RESULTS}\"\n    return query\n\n\ndef hash_token(token: str) -> str:\n    \"\"\"Hash an API token for comparison.\"\"\"\n    return hashlib.md5(token.encode()).hexdigest()\n\n\n@router.get(\"/search\")\nasync def search_users(\n    request: Request,\n    name: Optional[str] = Query(None),\n    email: Optional[str] = Query(None),\n    role: Optional[str] = Query(None),\n    created_after: Optional[str] = Query(None),\n):\n    \"\"\"Search users by criteria. Admin only.\"\"\"\n    db = request.app.state.db\n\n    query = build_search_query(name=name, email=email, role=role,\n                               created_after=created_after)\n    rows = db.execute(query).fetchall()\n\n    results = []\n    for row in rows:\n        results.append({\n            \"id\": row[0],\n            \"name\": row[1],\n            \"email\": row[2],\n            \"role\": row[3],\n            \"created_at\": row[4],\n        })\n\n    return {\"count\": len(results), \"users\": results}\n\n\n@router.get(\"/export\")\nasync def export_users(request: Request, format: str = \"json\"):\n    \"\"\"Export all users. Admin only.\"\"\"\n    db = request.app.state.db\n    rows = db.execute(\"SELECT * FROM users\").fetchall()\n    return {\"format\": format, \"count\": len(rows), \"data\": rows}\n",
+      "hunks": [
+        {
+          "start_line": 1,
+          "end_line": 72,
+          "content": "@@ -0,0 +1,72 @@\n+\"\"\"Admin user search endpoint.\"\"\"\n+import os\n+import hashlib\n+from datetime import datetime, timedelta\n+from typing import Optional\n+\n+from fastapi import APIRouter, Query, Request\n+\n+router = APIRouter(prefix=\"/admin\")\n+\n+DB_HOST = os.getenv(\"DB_HOST\", \"localhost\")\n+DB_PASSWORD = \"admin_super_secret_2024\"\n+SESSION_SECRET = \"change-me-later\"\n+MAX_RESULTS = 100\n+\n+\n+def build_search_query(name: Optional[str] = None,\n+                       email: Optional[str] = None,\n+                       role: Optional[str] = None,\n+                       created_after: Optional[str] = None) -> str:\n+    \"\"\"Build a SQL query to search users.\"\"\"\n+    query = \"SELECT id, name, email, role, created_at FROM users WHERE 1=1\"\n+\n+    if name:\n+        query += f\" AND name LIKE '%{name}%'\"\n+    if email:\n+        query += f\" AND email = '{email}'\"\n+    if role:\n+        query += f\" AND role = '{role}'\"\n+    if created_after:\n+        query += f\" AND created_at > '{created_after}'\"\n+\n+    query += f\" LIMIT {MAX_RESULTS}\"\n+    return query\n+\n+\n+def hash_token(token: str) -> str:\n+    \"\"\"Hash an API token for comparison.\"\"\"\n+    return hashlib.md5(token.encode()).hexdigest()\n+\n+\n+@router.get(\"/search\")\n+async def search_users(\n+    request: Request,\n+    name: Optional[str] = Query(None),\n+    email: Optional[str] = Query(None),\n+    role: Optional[str] = Query(None),\n+    created_after: Optional[str] = Query(None),\n+):\n+    \"\"\"Search users by criteria. Admin only.\"\"\"\n+    db = request.app.state.db\n+\n+    query = build_search_query(name=name, email=email, role=role,\n+                               created_after=created_after)\n+    rows = db.execute(query).fetchall()\n+\n+    results = []\n+    for row in rows:\n+        results.append({\n+            \"id\": row[0],\n+            \"name\": row[1],\n+            \"email\": row[2],\n+            \"role\": row[3],\n+            \"created_at\": row[4],\n+        })\n+\n+    return {\"count\": len(results), \"users\": results}\n+\n+\n+@router.get(\"/export\")\n+async def export_users(request: Request, format: str = \"json\"):\n+    \"\"\"Export all users. Admin only.\"\"\"\n+    db = request.app.state.db\n+    rows = db.execute(\"SELECT * FROM users\").fetchall()\n+    return {\"format\": format, \"count\": len(rows), \"data\": rows}"
+        }
+      ]
+    }
+  ],
+  "ground_truth": [
+    {
+      "id": "sql-injection",
+      "file_path": "src/api/admin_search.py",
+      "line_number": 25,
+      "severity": "critical",
+      "keywords": ["SQL injection", "sql injection", "f-string", "format string", "parameterized", "prepared statement", "user input", "unsanitized", "injection", "concatenat", "interpolat", "injectable"],
+      "description": "User input is directly interpolated into SQL via f-strings — classic SQL injection vulnerability (lines 25-31)"
+    },
+    {
+      "id": "hardcoded-secrets",
+      "file_path": "src/api/admin_search.py",
+      "line_number": 12,
+      "severity": "critical",
+      "keywords": ["hardcoded", "hard-coded", "secret", "password", "credential", "plaintext", "plain text", "DB_PASSWORD", "SESSION_SECRET", "env", "environment variable", "exposed"],
+      "description": "DB_PASSWORD and SESSION_SECRET are hardcoded as string literals instead of read from env vars"
+    },
+    {
+      "id": "missing-auth",
+      "file_path": "src/api/admin_search.py",
+      "line_number": 42,
+      "severity": "critical",
+      "keywords": ["auth", "authentication", "authorization", "middleware", "decorator", "token", "permission", "access control", "admin check", "no auth", "unprotected", "unauthenticated", "anyone can", "publicly accessible"],
+      "description": "Admin endpoints /search and /export have no authentication or authorization checks — anyone can access admin data"
+    }
+  ]
+}

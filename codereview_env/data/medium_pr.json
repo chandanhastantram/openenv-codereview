@@ -1,0 +1,60 @@
+{
+  "task_id": "triage-mixed-pr",
+  "difficulty": "medium",
+  "pr_title": "Add concurrent order processing pipeline",
+  "pr_description": "Implements a multi-threaded order processing system that reads from a shared queue, validates orders, and writes results to the database.",
+  "files": [
+    {
+      "path": "src/orders/processor.py",
+      "language": "python",
+      "change_type": "added",
+      "full_new_content": "\"\"\"Order processing pipeline.\"\"\"\nimport threading\nfrom typing import Any\n\n\nclass OrderProcessor:\n    \"\"\"Process orders from a shared queue.\"\"\"\n\n    def __init__(self, db_connection, max_workers: int = 4):\n        self.db = db_connection\n        self.max_workers = max_workers\n        self.order_queue: list[dict] = []\n        self.results: list[dict] = []\n        self.running = False\n\n    def enqueue(self, order: dict) -> None:\n        \"\"\"Add an order to the processing queue.\"\"\"\n        self.order_queue.append(order)\n\n    def _process_single(self, order: dict) -> dict:\n        \"\"\"Validate and process a single order.\"\"\"\n        result = {\"order_id\": order[\"id\"], \"status\": \"pending\"}\n\n        # Validate order total\n        total = sum(item[\"price\"] * item[\"quantity\"] for item in order[\"items\"])\n\n        if total <= 0:\n            result[\"status\"] = \"rejected\"\n            result[\"reason\"] = \"Invalid total\"\n            return result\n\n        # Apply discount\n        discount = order.get(\"discount_code\")\n        if discount:\n            total = total * 0.9  # 10% off\n\n        result[\"total\"] = total\n        result[\"status\"] = \"processed\"\n\n        # Save to database\n        self.db.execute(\n            \"INSERT INTO processed_orders (order_id, total, status) VALUES (?, ?, ?)\",\n            (order[\"id\"], total, \"processed\")\n        )\n        self.results.append(result)\n\n        return result\n\n    def process_all(self) -> list[dict]:\n        \"\"\"Process all queued orders using threads.\"\"\"\n        self.running = True\n        threads = []\n\n        for order in self.order_queue:\n            t = threading.Thread(target=self._process_single, args=(order,))\n            threads.append(t)\n            t.start()\n\n        for t in threads:\n            t.join()\n\n        self.running = False\n        self.order_queue.clear()\n        return self.results\n\n    def get_summary(self) -> dict:\n        \"\"\"Return processing summary.\"\"\"\n        total_processed = len([r for r in self.results if r[\"status\"] == \"processed\"])\n        total_rejected = len([r for r in self.results if r[\"status\"] == \"rejected\"])\n        revenue = sum(r[\"total\"] for r in self.results)\n\n        return {\n            \"processed\": total_processed,\n            \"rejected\": total_rejected,\n            \"total_revenue\": revenue,\n        }\n",
+      "hunks": [
+        {
+          "start_line": 1,
+          "end_line": 76,
+          "content": "@@ -0,0 +1,76 @@\n+\"\"\"Order processing pipeline.\"\"\"\n+import threading\n+from typing import Any\n+\n+\n+class OrderProcessor:\n+    \"\"\"Process orders from a shared queue.\"\"\"\n+\n+    def __init__(self, db_connection, max_workers: int = 4):\n+        self.db = db_connection\n+        self.max_workers = max_workers\n+        self.order_queue: list[dict] = []\n+        self.results: list[dict] = []\n+        self.running = False\n+\n+    def enqueue(self, order: dict) -> None:\n+        \"\"\"Add an order to the processing queue.\"\"\"\n+        self.order_queue.append(order)\n+\n+    def _process_single(self, order: dict) -> dict:\n+        \"\"\"Validate and process a single order.\"\"\"\n+        result = {\"order_id\": order[\"id\"], \"status\": \"pending\"}\n+\n+        # Validate order total\n+        total = sum(item[\"price\"] * item[\"quantity\"] for item in order[\"items\"])\n+\n+        if total <= 0:\n+            result[\"status\"] = \"rejected\"\n+            result[\"reason\"] = \"Invalid total\"\n+            return result\n+\n+        # Apply discount\n+        discount = order.get(\"discount_code\")\n+        if discount:\n+            total = total * 0.9  # 10% off\n+\n+        result[\"total\"] = total\n+        result[\"status\"] = \"processed\"\n+\n+        # Save to database\n+        self.db.execute(\n+            \"INSERT INTO processed_orders (order_id, total, status) VALUES (?, ?, ?)\",\n+            (order[\"id\"], total, \"processed\")\n+        )\n+        self.results.append(result)\n+\n+        return result\n+\n+    def process_all(self) -> list[dict]:\n+        \"\"\"Process all queued orders using threads.\"\"\"\n+        self.running = True\n+        threads = []\n+\n+        for order in self.order_queue:\n+            t = threading.Thread(target=self._process_single, args=(order,))\n+            threads.append(t)\n+            t.start()\n+\n+        for t in threads:\n+            t.join()\n+\n+        self.running = False\n+        self.order_queue.clear()\n+        return self.results\n+\n+    def get_summary(self) -> dict:\n+        \"\"\"Return processing summary.\"\"\"\n+        total_processed = len([r for r in self.results if r[\"status\"] == \"processed\"])\n+        total_rejected = len([r for r in self.results if r[\"status\"] == \"rejected\"])\n+        revenue = sum(r[\"total\"] for r in self.results)\n+\n+        return {\n+            \"processed\": total_processed,\n+            \"rejected\": total_rejected,\n+            \"total_revenue\": revenue,\n+        }"
+        }
+      ]
+    },
+    {
+      "path": "src/orders/validation.py",
+      "language": "python",
+      "change_type": "added",
+      "full_new_content": "\"\"\"Order validation helpers.\"\"\"\n\n\ndef validate_order_payload(payload: dict) -> tuple[bool, str]:\n    \"\"\"Validate an incoming order payload.\n    \n    Returns (is_valid, error_message).\n    \"\"\"\n    if not isinstance(payload, dict):\n        return False, \"Payload must be a dict\"\n\n    order_id = payload.get(\"id\")\n    items = payload.get(\"items\")\n\n    if not items:\n        return False, \"Order must have items\"\n\n    for item in items:\n        if item[\"quantity\"] < 0:\n            return False, f\"Invalid quantity for item {item.get('name', '?')}\"\n\n    return True, \"\"\n\n\ndef sanitize_customer_name(name: str) -> str:\n    \"\"\"Clean up a customer name for display.\"\"\"\n    return name.strip().title()\n",
+      "hunks": [
+        {
+          "start_line": 1,
+          "end_line": 27,
+          "content": "@@ -0,0 +1,27 @@\n+\"\"\"Order validation helpers.\"\"\"\n+\n+\n+def validate_order_payload(payload: dict) -> tuple[bool, str]:\n+    \"\"\"Validate an incoming order payload.\n+    \n+    Returns (is_valid, error_message).\n+    \"\"\"\n+    if not isinstance(payload, dict):\n+        return False, \"Payload must be a dict\"\n+\n+    order_id = payload.get(\"id\")\n+    items = payload.get(\"items\")\n+\n+    if not items:\n+        return False, \"Order must have items\"\n+\n+    for item in items:\n+        if item[\"quantity\"] < 0:\n+            return False, f\"Invalid quantity for item {item.get('name', '?')}\"\n+\n+    return True, \"\"\n+\n+\n+def sanitize_customer_name(name: str) -> str:\n+    \"\"\"Clean up a customer name for display.\"\"\"\n+    return name.strip().title()"
+        }
+      ]
+    }
+  ],
+  "ground_truth": [
+    {
+      "id": "race-condition-results",
+      "file_path": "src/orders/processor.py",
+      "line_number": 44,
+      "severity": "critical",
+      "keywords": ["race condition", "thread safe", "thread-safe", "concurrent", "lock", "mutex", "self.results", "shared", "append", "not thread", "synchronization"],
+      "description": "self.results.append(result) is called from multiple threads without a lock — race condition on shared list"
+    },
+    {
+      "id": "missing-validation-quantity-zero",
+      "file_path": "src/orders/validation.py",
+      "line_number": 19,
+      "severity": "major",
+      "keywords": ["zero", "quantity", "<= 0", "== 0", "less than or equal", "should be", "greater than 0", "positive", "allow zero", "boundary"],
+      "description": "Validation checks quantity < 0 but allows quantity == 0 — a zero-quantity item shouldn't be valid"
+    },
+    {
+      "id": "unused-import-any",
+      "file_path": "src/orders/processor.py",
+      "line_number": 3,
+      "severity": "minor",
+      "keywords": ["unused", "import", "Any", "not used", "dead code", "remove", "unnecessary"],
+      "description": "typing.Any is imported but never used"
+    }
+  ]
+}
