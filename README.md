@@ -21,7 +21,7 @@ Code review is one of the most common and impactful tasks in software engineerin
 - **IDE copilots** that catch issues in real-time as developers write code
 - **Security audit tools** that identify vulnerabilities at scale
 
-## Tasks
+## Tasks 
 
 | Task ID            | Difficulty  | Description                                              | Key Challenge                                                                 |
 | ------------------ | ----------- | -------------------------------------------------------- | ----------------------------------------------------------------------------- |
