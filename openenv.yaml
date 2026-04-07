@@ -14,6 +14,10 @@ tags:
   - security
   - software-engineering
 
+env_vars:
+  - name: API_BASE_URL
+    description: "The API endpoint for the LLM."
+
 tasks:
   - id: find-obvious-bug
     difficulty: easy
