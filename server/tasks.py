@@ -24,6 +24,16 @@ DATA_DIR = Path(__file__).parent / "data"
 
 LINE_TOLERANCE = 5  # Agent's line must be within ±5 of ground truth
 
+# ── Score clamping ───────────────────────────────────────────────────
+
+_SCORE_MIN = 0.001  # Strictly greater than 0
+_SCORE_MAX = 0.999  # Strictly less than 1
+
+
+def _clamp_score(score: float) -> float:
+    """Clamp score to the open interval (0, 1) as required by OpenEnv validators."""
+    return round(max(_SCORE_MIN, min(_SCORE_MAX, score)), 4)
+
 
 # ── Task data loader ────────────────────────────────────────────────
 
@@ -155,7 +165,7 @@ def grade_easy(comments: list[ReviewComment], ground_truth: list[dict]) -> dict:
         feedback_parts.append(f"❌ Did not identify the null-dereference bug.")
 
     return {
-        "score": min(best_score, 1.0),
+        "score": _clamp_score(best_score),
         "breakdown": {issue["id"]: best_score},
         "feedback": " ".join(feedback_parts),
     }
@@ -191,7 +201,7 @@ def grade_medium(comments: list[ReviewComment], ground_truth: list[dict]) -> dic
             feedback_parts.append(f"❌ {issue['id']}: missed")
 
     return {
-        "score": round(min(total_score, 1.0), 3),
+        "score": _clamp_score(total_score),
         "breakdown": breakdown,
         "feedback": " | ".join(feedback_parts),
     }
@@ -242,7 +252,7 @@ def grade_hard(comments: list[ReviewComment], ground_truth: list[dict]) -> dict:
         total_score += issue_score
 
     return {
-        "score": round(min(total_score, 1.0), 3),
+        "score": _clamp_score(total_score),
         "breakdown": breakdown,
         "feedback": " | ".join(feedback_parts),
     }
