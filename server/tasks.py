@@ -26,8 +26,8 @@ LINE_TOLERANCE = 5  # Agent's line must be within ±5 of ground truth
 
 # ── Score clamping ───────────────────────────────────────────────────
 
-_SCORE_MIN = 0.001  # Strictly greater than 0
-_SCORE_MAX = 0.999  # Strictly less than 1
+_SCORE_MIN = 0.01  # Strictly greater than 0 — must survive :.2f formatting
+_SCORE_MAX = 0.99  # Strictly less than 1 — must survive :.2f formatting
 
 
 def _clamp_score(score: float) -> float:

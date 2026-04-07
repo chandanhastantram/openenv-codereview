@@ -132,7 +132,7 @@ class TestStep:
         # Step again after episode ended
         result = env.step(CodeReviewAction(action_type="approve", message="ok"))
         assert result.done is True
-        assert result.reward == 0.001  # Clamped: must be > 0 per OpenEnv validator
+        assert result.reward == 0.01  # Clamped: must be > 0 per OpenEnv validator
 
     def test_step_missing_file_path_for_comment(self, env):
         env.reset("find-obvious-bug")
@@ -186,7 +186,7 @@ class TestGraders:
             )
         ]
         result = grade_task("find-obvious-bug", comments, data["ground_truth"])
-        assert result["score"] >= 0.999  # Clamped from 1.0 to _SCORE_MAX
+        assert result["score"] >= 0.99  # Clamped from 1.0 to _SCORE_MAX
 
     def test_easy_grader_wrong_line(self):
         data = load_task("find-obvious-bug")
@@ -212,7 +212,7 @@ class TestGraders:
             )
         ]
         result = grade_task("find-obvious-bug", comments, data["ground_truth"])
-        assert result["score"] <= 0.001  # Clamped from 0.0 to _SCORE_MIN
+        assert result["score"] <= 0.01  # Clamped from 0.0 to _SCORE_MIN
 
     def test_medium_grader_all_found(self):
         data = load_task("triage-mixed-pr")
@@ -275,7 +275,7 @@ class TestGraders:
             )
         ]
         result = grade_task("security-audit", comments, data["ground_truth"])
-        assert result["score"] <= 0.001  # Clamped from 0.0 to _SCORE_MIN
+        assert result["score"] <= 0.01  # Clamped from 0.0 to _SCORE_MIN
 
     def test_rewards_strictly_in_open_interval(self):
         """All graders must return scores strictly in (0, 1) — never 0.0 or 1.0."""

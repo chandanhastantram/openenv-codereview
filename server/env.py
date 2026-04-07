@@ -88,14 +88,14 @@ class CodeReviewEnv:
         if self._done:
             return StepResult(
                 observation=self._build_observation(),
-                reward=0.001,  # Must be > 0 per OpenEnv validator
+                reward=0.01,  # Must be > 0 per OpenEnv validator (survives :.2f)
                 done=True,
                 info={"error": "Episode already done. Call reset()."},
             )
 
         self._step += 1
         self._last_error = None
-        reward = 0.001  # Default: always > 0
+        reward = 0.01  # Default: always > 0 (survives :.2f formatting)
 
         try:
             if action.action_type == "comment":
@@ -104,7 +104,7 @@ class CodeReviewEnv:
                 reward = self._handle_submit(action)
             else:
                 self._last_error = f"Unknown action_type: {action.action_type}"
-                # reward stays at 0.001 (valid, > 0)
+                # reward stays at 0.01 (valid, > 0)
         except Exception as exc:
             self._last_error = str(exc)
 
@@ -146,11 +146,11 @@ class CodeReviewEnv:
         if not action.file_path:
             self._last_error = "file_path is required for comment action"
             # Must be > 0 per OpenEnv validator — use minimum valid score
-            return 0.001
+            return 0.01
 
         if action.line_number is None:
             self._last_error = "line_number is required for comment action"
-            return 0.001
+            return 0.01
 
         comment = ReviewComment(
             file_path=action.file_path,
@@ -171,9 +171,9 @@ class CodeReviewEnv:
                 best = max(best, score)
 
         # Scale incremental reward (small, so final grading dominates)
-        # Always clamp to (0, 1) — never return exactly 0.0
+        # Always clamp to (0, 1) — values must survive :.2f formatting
         raw = round(best * 0.05, 4)
-        return max(0.001, min(0.999, raw)) if raw > 0 else 0.001
+        return max(0.01, min(0.99, raw)) if raw > 0 else 0.01
 
     def _handle_submit(self, action: CodeReviewAction) -> float:
         """Submit the review — finalize and grade."""
