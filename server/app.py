@@ -149,10 +149,13 @@ async def step_endpoint(body: StepRequest) -> StepResponse:
 
     result: StepResult = env.step(action)
 
+    # Clamp reward to (0, 1) — defense-in-depth for OpenEnv validator
+    clamped_reward = max(0.01, min(0.99, float(result.reward)))
+
     return StepResponse(
         session_id=body.session_id,
         observation=result.observation.model_dump(),
-        reward=result.reward,
+        reward=round(clamped_reward, 4),
         done=result.done,
         info=result.info,
     )

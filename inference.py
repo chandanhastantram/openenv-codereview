@@ -58,6 +58,15 @@ MAX_TOKENS = 800
 # Score threshold to consider an episode "successful"
 SUCCESS_THRESHOLD = 0.5
 
+# Strict bounds for logged scores — must survive :.2f and be in open (0, 1)
+_LOG_MIN = 0.01
+_LOG_MAX = 0.99
+
+
+def _clamp(v: float) -> float:
+    """Clamp a numeric value to the open interval (0, 1)."""
+    return max(_LOG_MIN, min(_LOG_MAX, float(v)))
+
 
 # ── Logging (mandatory format) ─────────────────────────────────────
 
@@ -68,14 +77,16 @@ def log_start(task: str, env: str, model: str) -> None:
 def log_step(step: int, action: str, reward: float, done: bool, error: Optional[str]) -> None:
     error_val = error if error else "null"
     done_val = str(done).lower()
+    clamped = _clamp(reward)
     print(
-        f"[STEP] step={step} action={action} reward={reward:.2f} done={done_val} error={error_val}",
+        f"[STEP] step={step} action={action} reward={clamped:.2f} done={done_val} error={error_val}",
         flush=True,
     )
 
 
 def log_end(success: bool, steps: int, rewards: List[float]) -> None:
-    rewards_str = ",".join(f"{r:.2f}" for r in rewards)
+    clamped_rewards = [_clamp(r) for r in rewards]
+    rewards_str = ",".join(f"{r:.2f}" for r in clamped_rewards)
     print(f"[END] success={str(success).lower()} steps={steps} rewards={rewards_str}", flush=True)
 
 
@@ -282,7 +293,7 @@ def run_task(client: OpenAI, env: EnvClient, task_id: str) -> None:
             action = parse_action(response_text)
             result = env.step(action)
 
-            reward = result.get("reward", 0.0)
+            reward = _clamp(result.get("reward", 0.01))  # Default to valid min, never 0.0
             done = result.get("done", False)
             obs = result.get("observation", {})
             error = obs.get("last_action_error")

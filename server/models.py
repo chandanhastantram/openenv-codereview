@@ -89,7 +89,7 @@ class CodeReviewReward(BaseModel):
 class StepResult(BaseModel):
     """Full return from env.step()."""
     observation: CodeReviewObservation
-    reward: float = 0.0
+    reward: float = 0.01  # Default must be > 0 per OpenEnv validator
     done: bool = False
     info: dict = Field(default_factory=dict)
 

@@ -8,6 +8,15 @@ from __future__ import annotations
 import copy
 from typing import Any, Optional
 
+# Score boundaries — must survive :.2f formatting and stay strictly in (0, 1)
+_REWARD_MIN = 0.01
+_REWARD_MAX = 0.99
+
+
+def _clamp_reward(r: float) -> float:
+    """Clamp a reward to the open interval (0, 1)."""
+    return round(max(_REWARD_MIN, min(_REWARD_MAX, float(r))), 4)
+
 from .models import (
     CodeReviewAction,
     CodeReviewObservation,
@@ -88,7 +97,7 @@ class CodeReviewEnv:
         if self._done:
             return StepResult(
                 observation=self._build_observation(),
-                reward=0.01,  # Must be > 0 per OpenEnv validator (survives :.2f)
+                reward=_clamp_reward(0.01),
                 done=True,
                 info={"error": "Episode already done. Call reset()."},
             )
@@ -113,12 +122,15 @@ class CodeReviewEnv:
             # Force-submit at max steps
             reward = self._finalize_episode()
 
+        # Always clamp to (0, 1) — defense-in-depth for OpenEnv validator
+        reward = _clamp_reward(reward)
+
         self._episode_rewards.append(reward)
         self._cumulative_reward += reward
 
         return StepResult(
             observation=self._build_observation(),
-            reward=round(reward, 4),
+            reward=reward,
             done=self._done,
             info={
                 "step": self._step,
