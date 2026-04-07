@@ -132,7 +132,7 @@ class TestStep:
         # Step again after episode ended
         result = env.step(CodeReviewAction(action_type="approve", message="ok"))
         assert result.done is True
-        assert result.reward == 0.0
+        assert result.reward == 0.001  # Clamped: must be > 0 per OpenEnv validator
 
     def test_step_missing_file_path_for_comment(self, env):
         env.reset("find-obvious-bug")
@@ -186,7 +186,7 @@ class TestGraders:
             )
         ]
         result = grade_task("find-obvious-bug", comments, data["ground_truth"])
-        assert result["score"] == 1.0
+        assert result["score"] >= 0.999  # Clamped from 1.0 to _SCORE_MAX
 
     def test_easy_grader_wrong_line(self):
         data = load_task("find-obvious-bug")
@@ -212,7 +212,7 @@ class TestGraders:
             )
         ]
         result = grade_task("find-obvious-bug", comments, data["ground_truth"])
-        assert result["score"] == 0.0
+        assert result["score"] <= 0.001  # Clamped from 0.0 to _SCORE_MIN
 
     def test_medium_grader_all_found(self):
         data = load_task("triage-mixed-pr")
@@ -275,17 +275,17 @@ class TestGraders:
             )
         ]
         result = grade_task("security-audit", comments, data["ground_truth"])
-        assert result["score"] == 0.0
+        assert result["score"] <= 0.001  # Clamped from 0.0 to _SCORE_MIN
 
-    def test_rewards_always_in_range(self):
-        """All graders must return scores in 0.0–1.0."""
+    def test_rewards_strictly_in_open_interval(self):
+        """All graders must return scores strictly in (0, 1) — never 0.0 or 1.0."""
         for task_id in ["find-obvious-bug", "triage-mixed-pr", "security-audit"]:
             data = load_task(task_id)
-            # Empty comments
+            # Empty comments — would be 0.0 raw, must be clamped above 0
             r = grade_task(task_id, [], data["ground_truth"])
-            assert 0.0 <= r["score"] <= 1.0
-            # Random wrong comment
+            assert 0.0 < r["score"] < 1.0, f"{task_id} empty: {r['score']} not in (0,1)"
+            # Random wrong comment — should also be clamped
             r = grade_task(task_id, [
                 ReviewComment(file_path="x.py", line_number=999, message="nothing", severity="minor")
             ], data["ground_truth"])
-            assert 0.0 <= r["score"] <= 1.0
+            assert 0.0 < r["score"] < 1.0, f"{task_id} wrong: {r['score']} not in (0,1)"

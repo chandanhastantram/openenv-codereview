@@ -78,7 +78,7 @@ class CodeReviewAction(BaseModel):
 
 class CodeReviewReward(BaseModel):
     """Reward signal returned after each step or at episode end."""
-    score: float = Field(0.0, ge=0.0, le=1.0, description="Overall score 0.0–1.0")
+    score: float = Field(0.5, gt=0.0, lt=1.0, description="Overall score strictly in (0, 1)")
     breakdown: dict[str, float] = Field(
         default_factory=dict,
         description="Per-issue scoring breakdown"
