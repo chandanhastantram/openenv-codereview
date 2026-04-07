@@ -284,8 +284,12 @@ class TestGraders:
             # Empty comments — would be 0.0 raw, must be clamped above 0
             r = grade_task(task_id, [], data["ground_truth"])
             assert 0.0 < r["score"] < 1.0, f"{task_id} empty: {r['score']} not in (0,1)"
+            for k, v in r["breakdown"].items():
+                assert 0.0 < v < 1.0, f"{task_id} breakdown {k}: {v} not in (0,1)"
             # Random wrong comment — should also be clamped
             r = grade_task(task_id, [
                 ReviewComment(file_path="x.py", line_number=999, message="nothing", severity="minor")
             ], data["ground_truth"])
             assert 0.0 < r["score"] < 1.0, f"{task_id} wrong: {r['score']} not in (0,1)"
+            for k, v in r["breakdown"].items():
+                assert 0.0 < v < 1.0, f"{task_id} breakdown {k}: {v} not in (0,1)"

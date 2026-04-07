@@ -166,7 +166,7 @@ def grade_easy(comments: list[ReviewComment], ground_truth: list[dict]) -> dict:
 
     return {
         "score": _clamp_score(best_score),
-        "breakdown": {issue["id"]: best_score},
+        "breakdown": {issue["id"]: _clamp_score(best_score)},
         "feedback": " ".join(feedback_parts),
     }
 
@@ -192,7 +192,7 @@ def grade_medium(comments: list[ReviewComment], ground_truth: list[dict]) -> dic
                 best_score = max(best_score, score)
 
         weighted_score = best_score * weight
-        breakdown[issue["id"]] = round(weighted_score, 3)
+        breakdown[issue["id"]] = _clamp_score(weighted_score)
         total_score += weighted_score
 
         if best_score >= 0.6:
@@ -248,7 +248,7 @@ def grade_hard(comments: list[ReviewComment], ground_truth: list[dict]) -> dict:
         else:
             feedback_parts.append(f"❌ {issue['id']}: missed")
 
-        breakdown[issue["id"]] = round(issue_score, 3)
+        breakdown[issue["id"]] = _clamp_score(issue_score)
         total_score += issue_score
 
     return {
