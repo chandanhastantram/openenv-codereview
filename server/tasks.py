@@ -24,14 +24,14 @@ DATA_DIR = Path(__file__).parent / "data"
 
 LINE_TOLERANCE = 5  # Agent's line must be within ±5 of ground truth
 
-# ── Score clamping ───────────────────────────────────────────────────
+# Score clamping ───────────────────────────────────────────────────
 
-_SCORE_MIN = 0.01  # Strictly greater than 0 — must survive :.2f formatting
-_SCORE_MAX = 0.99  # Strictly less than 1 — must survive :.2f formatting
+_SCORE_MIN = 0.01
+_SCORE_MAX = 0.99
 
 
 def _clamp_score(score: float) -> float:
-    """Clamp score to the open interval (0, 1) as required by OpenEnv validators."""
+    """Clamp score to the strictly open interval (0, 1) to satisfy validator."""
     return round(max(_SCORE_MIN, min(_SCORE_MAX, score)), 4)
 
 

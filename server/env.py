@@ -8,13 +8,13 @@ from __future__ import annotations
 import copy
 from typing import Any, Optional
 
-# Score boundaries — must survive :.2f formatting and stay strictly in (0, 1)
-_REWARD_MIN = 0.01
-_REWARD_MAX = 0.99
+# Score boundaries 
+_REWARD_MIN = 0.0
+_REWARD_MAX = 1.0
 
 
 def _clamp_reward(r: float) -> float:
-    """Clamp a reward to the open interval (0, 1)."""
+    """Clamp a reward to the closed interval [0.0, 1.0]."""
     return round(max(_REWARD_MIN, min(_REWARD_MAX, float(r))), 4)
 
 from .models import (
@@ -56,6 +56,7 @@ class CodeReviewEnv:
         self._cumulative_reward: float = 0.0
         self._episode_rewards: list[float] = []
         self._last_error: Optional[str] = None
+        self._last_score: float = 0.0
 
     # ── OpenEnv Interface ───────────────────────────────────────────
 
@@ -79,6 +80,7 @@ class CodeReviewEnv:
         self._cumulative_reward = 0.0
         self._episode_rewards = []
         self._last_error = None
+        self._last_score = 0.0
 
         return self._build_observation()
 
@@ -97,33 +99,42 @@ class CodeReviewEnv:
         if self._done:
             return StepResult(
                 observation=self._build_observation(),
-                reward=_clamp_reward(0.01),
+                reward=0.0,
                 done=True,
                 info={"error": "Episode already done. Call reset()."},
             )
 
         self._step += 1
         self._last_error = None
-        reward = 0.01  # Default: always > 0 (survives :.2f formatting)
+        reward = 0.0
 
         try:
             if action.action_type == "comment":
-                reward = self._handle_comment(action)
+                self._handle_comment(action)
+                if not self._last_error:
+                    new_score = self._compute_current_score()
+                    reward = new_score - self._last_score
+                    self._last_score = new_score
             elif action.action_type in ("approve", "request_changes"):
-                reward = self._handle_submit(action)
+                self._done = True
+                new_score = self._compute_current_score()
+                reward = new_score - self._last_score
+                self._last_score = new_score
             else:
                 self._last_error = f"Unknown action_type: {action.action_type}"
-                # reward stays at 0.01 (valid, > 0)
         except Exception as exc:
             self._last_error = str(exc)
 
         # Check if episode should end
         if self._step >= self._max_steps and not self._done:
             # Force-submit at max steps
-            reward = self._finalize_episode()
+            self._done = True
+            new_score = self._compute_current_score()
+            reward = new_score - self._last_score
+            self._last_score = new_score
 
-        # Always clamp to (0, 1) — defense-in-depth for OpenEnv validator
-        reward = _clamp_reward(reward)
+        # Ensure incremental reward doesn't push cumulative negatively (though our grader monotonic)
+        reward = round(reward, 4)
 
         self._episode_rewards.append(reward)
         self._cumulative_reward += reward
@@ -153,16 +164,15 @@ class CodeReviewEnv:
 
     # ── Action handlers ─────────────────────────────────────────────
 
-    def _handle_comment(self, action: CodeReviewAction) -> float:
-        """Place a review comment. Returns incremental reward signal in (0, 1)."""
+    def _handle_comment(self, action: CodeReviewAction) -> None:
+        """Place a review comment."""
         if not action.file_path:
             self._last_error = "file_path is required for comment action"
-            # Must be > 0 per OpenEnv validator — use minimum valid score
-            return 0.01
+            return 
 
         if action.line_number is None:
             self._last_error = "line_number is required for comment action"
-            return 0.01
+            return 
 
         comment = ReviewComment(
             file_path=action.file_path,
@@ -173,27 +183,8 @@ class CodeReviewEnv:
         )
         self._comments.append(comment)
 
-        # Provide a small incremental signal: did this comment match any issue?
-        from .tasks import _match_comment_to_issue
-
-        best = 0.0
-        for issue in self._ground_truth:
-            matched, score = _match_comment_to_issue(comment, issue)
-            if matched:
-                best = max(best, score)
-
-        # Scale incremental reward (small, so final grading dominates)
-        # Always clamp to (0, 1) — values must survive :.2f formatting
-        raw = round(best * 0.05, 4)
-        return max(0.01, min(0.99, raw)) if raw > 0 else 0.01
-
-    def _handle_submit(self, action: CodeReviewAction) -> float:
-        """Submit the review — finalize and grade."""
-        return self._finalize_episode()
-
-    def _finalize_episode(self) -> float:
-        """Run the grader and end the episode."""
-        self._done = True
+    def _compute_current_score(self) -> float:
+        """Compute the cumulative score for the current state of comments."""
         result = grade_task(self._task_id, self._comments, self._ground_truth)
         return result["score"]
 

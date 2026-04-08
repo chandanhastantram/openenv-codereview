@@ -58,13 +58,13 @@ MAX_TOKENS = 800
 # Score threshold to consider an episode "successful"
 SUCCESS_THRESHOLD = 0.5
 
-# Strict bounds for logged scores — must survive :.2f and be in open (0, 1)
-_LOG_MIN = 0.01
-_LOG_MAX = 0.99
+# Strict bounds for logged scores
+_LOG_MIN = 0.0
+_LOG_MAX = 1.0
 
 
 def _clamp(v: float) -> float:
-    """Clamp a numeric value to the open interval (0, 1)."""
+    """Clamp a numeric value to the closed interval [0.0, 1.0]."""
     return max(_LOG_MIN, min(_LOG_MAX, float(v)))
 
 
